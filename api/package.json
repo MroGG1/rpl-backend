@@ -2,9 +2,9 @@
   "name": "tugas-rpl-backend-final",
   "version": "1.0.0",
   "description": "API untuk aplikasi Raysa Es Kristal",
-  "main": "api/index.js",
+  "main": "index.js",
   "scripts": {
-    "start": "node api/index.js"
+    "start": "node index.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.2",
