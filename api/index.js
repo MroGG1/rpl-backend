@@ -10,7 +10,7 @@ const app = express();
 
 // 1. Izinkan server menerima permintaan dari frontend Vercel Anda
 app.use(cors({
-    origin: "https://tugas-rpl-pi.vercel.app", // URL Frontend Anda
+    origin: "https://tugas-aks44l0ya-tians-projects-fb33f0ce.vercel.app", // URL Frontend Anda
     credentials: true
 }));
 
