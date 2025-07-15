@@ -6,56 +6,70 @@ const session = require("express-session");
 
 const app = express();
 
+// --- KONFIGURASI PENTING UNTUK PRODUKSI ---
+
+// 1. Izinkan server menerima permintaan dari frontend Vercel Anda
 app.use(cors({
-    origin: process.env.FRONTEND_URL || "https://tugas-rpl-pi.vercel.app",
+    origin: "https://tugas-rpl-pi.vercel.app", // URL Frontend Anda
     credentials: true
 }));
 
+// 2. Memberitahu Express untuk mempercayai proxy dari Railway
+app.set('trust proxy', 1);
+
+// 3. Middleware untuk membaca body JSON
 app.use(express.json());
 
+// 4. Konfigurasi koneksi ke database Supabase Anda
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
 });
 
+// 5. Konfigurasi Sesi untuk Lintas Domain
 app.use(session({
     secret: process.env.SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
-    proxy: true, // Diperlukan karena Railway menggunakan proxy
     cookie: {
-        secure: true,
-        httpOnly: true,
-        sameSite: 'none',
-        maxAge: 24 * 60 * 60 * 1000
+        secure: true,        // Wajib 'true' karena cookie dikirim melalui HTTPS
+        httpOnly: true,      // Mencegah akses dari JavaScript sisi klien
+        sameSite: 'none',    // KUNCI UTAMA: Izinkan cookie dikirim dari domain berbeda
+        maxAge: 24 * 60 * 60 * 1000 // Sesi berlaku 1 hari
     }
 }));
 
-// === API ENDPOINTS ===
 
+// --- KUMPULAN API ENDPOINTS ---
+
+// Endpoint untuk mengecek apakah server berjalan
 app.get("/api", (req, res) => {
     res.status(200).json({ message: "Backend API is running!" });
 });
 
+// Endpoint Login
 app.post("/api/login", async (req, res) => {
     const { username, password } = req.body;
     try {
         const { rows } = await pool.query('SELECT * FROM admin WHERE username = $1', [username]);
         const user = rows[0];
-        if (!user) return res.status(401).json({ success: false, message: "Username/password salah." });
+        if (!user) {
+            return res.status(401).json({ success: false, message: "Username atau password salah." });
+        }
         
         const isMatch = await bcrypt.compare(password, user.password);
         if (isMatch) {
             req.session.user = { id: user.id, username: user.username };
-            return res.json({ success: true });
+            return res.json({ success: true, message: "Login berhasil." });
         } else {
-            return res.status(401).json({ success: false, message: "Username/password salah." });
+            return res.status(401).json({ success: false, message: "Username atau password salah." });
         }
     } catch (err) {
         console.error("LOGIN ERROR:", err);
-        return res.status(500).json({ success: false, message: "Server error." });
+        return res.status(500).json({ success: false, message: "Terjadi kesalahan pada server." });
     }
 });
 
+// Endpoint untuk mengecek sesi (profil)
 app.get("/api/profile", (req, res) => {
     if (req.session.user) {
         res.json({ username: req.session.user.username });
@@ -64,61 +78,30 @@ app.get("/api/profile", (req, res) => {
     }
 });
 
+// Endpoint Logout
 app.post("/api/logout", (req, res) => {
     req.session.destroy(err => {
-        if (err) return res.status(500).json({ message: "Gagal logout." });
+        if (err) {
+            return res.status(500).json({ message: "Gagal logout." });
+        }
         res.clearCookie('connect.sid');
         res.status(200).json({ message: 'Logout berhasil.' });
     });
 });
 
+// Endpoint untuk mendapatkan semua produk
 app.get("/api/products", async (req, res) => {
     try {
-        const { rows } = await pool.query('SELECT * FROM products ORDER BY id');
+        const { rows } = await pool.query('SELECT id, nama_produk, harga, deskripsi FROM products ORDER BY id');
         res.json(rows);
     } catch (err) {
         console.error("GET PRODUCTS ERROR:", err);
-        res.status(500).json({ message: "Gagal ambil produk." });
+        res.status(500).json({ message: "Gagal mengambil data produk." });
     }
 });
 
-app.post("/api/products", async (req, res) => {
-    if (!req.session.user) return res.status(401).json({ message: "Unauthorized" });
-    const { nama_produk, harga, deskripsi } = req.body;
-    try {
-        const { rows } = await pool.query('INSERT INTO products (nama_produk, harga, deskripsi) VALUES ($1, $2, $3) RETURNING id', [nama_produk, harga, deskripsi]);
-        res.status(201).json({ success: true, id: rows[0].id });
-    } catch (err) {
-        console.error("CREATE PRODUCT ERROR:", err);
-        res.status(500).json({ message: "Gagal menambah produk." });
-    }
-});
 
-app.put("/api/products/:id", async (req, res) => {
-    if (!req.session.user) return res.status(401).json({ message: "Unauthorized" });
-    try {
-        const { id } = req.params;
-        const { nama_produk, harga, deskripsi } = req.body;
-        await pool.query('UPDATE products SET nama_produk = $1, harga = $2, deskripsi = $3 WHERE id = $4', [nama_produk, harga, deskripsi, id]);
-        res.json({ success: true });
-    } catch (err) {
-        console.error("UPDATE PRODUCT ERROR:", err);
-        res.status(500).json({ message: "Gagal update produk." });
-    }
-});
-
-app.delete("/api/products/:id", async (req, res) => {
-    if (!req.session.user) return res.status(401).json({ message: "Unauthorized" });
-    try {
-        const { id } = req.params;
-        await pool.query('DELETE FROM products WHERE id = $1', [id]);
-        res.json({ success: true });
-    } catch (err) {
-        console.error("DELETE PRODUCT ERROR:", err);
-        res.status(500).json({ message: "Gagal hapus produk." });
-    }
-});
-
+// --- Menjalankan Server ---
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
     console.log(`Server is listening on port ${PORT}`);
