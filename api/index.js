@@ -1,19 +1,21 @@
+// VERSI PENGUJIAN TANPA BCRYPT
+
 const express = require("express");
 const { Pool } = require('pg');
-const bcrypt = require("bcryptjs");
+// const bcrypt = require("bcryptjs"); // bcryptjs sengaja dinonaktifkan untuk tes
 const cors = require("cors");
 const session = require("express-session");
 
 const app = express();
 
-// --- KONFIGURASI KRUSIAL UNTUK PRODUKSI ---
+// --- KONFIGURASI PENTING UNTUK PRODUKSI ---
 
 // 1. Memberitahu Express untuk mempercayai proxy dari Railway
 app.set('trust proxy', 1);
 
 // 2. Konfigurasi CORS untuk frontend Vercel Anda
 app.use(cors({
-    origin: "https://tugas-aks44l0ya-tians-projects-fb33f0ce.vercel.app", // URL Vercel Frontend Anda
+    origin: "https://tugas-aks44l0ya-tians-projects-fb33f0ce.vercel.app",
     credentials: true
 }));
 
@@ -27,14 +29,14 @@ const pool = new Pool({
 
 // 5. Konfigurasi Sesi untuk Lintas Domain
 app.use(session({
-    secret: process.env.SESSION_SECRET, // Diambil dari Environment Variable Railway
+    secret: process.env.SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
     cookie: {
-        secure: true,        // Cookie hanya dikirim melalui HTTPS
-        httpOnly: true,      // Mencegah akses dari JavaScript sisi klien
-        sameSite: 'none',    // KUNCI UTAMA: Izinkan cookie dikirim dari domain berbeda
-        maxAge: 24 * 60 * 60 * 1000 // Sesi berlaku selama 1 hari
+        secure: true,
+        httpOnly: true,
+        sameSite: 'none',
+        maxAge: 24 * 60 * 60 * 1000 // Sesi berlaku 1 hari
     }
 }));
 
@@ -42,25 +44,27 @@ app.use(session({
 // --- KUMPULAN API ENDPOINTS ---
 
 app.get("/api", (req, res) => {
-    res.status(200).json({ message: "Backend API is running!" });
+    res.status(200).json({ message: "Backend API is running in TEST MODE (without bcrypt)!" });
 });
 
+// Endpoint Login dengan perbandingan teks biasa
 app.post("/api/login", async (req, res) => {
     const { username, password } = req.body;
     try {
         const { rows } = await pool.query('SELECT * FROM admin WHERE username = $1', [username]);
         const user = rows[0];
-        if (!user) return res.status(401).json({ success: false, message: "Username/password salah." });
+        if (!user) {
+            return res.status(401).json({ success: false, message: "Username salah." });
+        }
 
-        const isMatch = await bcrypt.compare(password, user.password);
-        if (isMatch) {
+        // === PERUBAHAN UTAMA: Membandingkan password langsung (plain text) ===
+        if (password === user.password) { 
             req.session.user = { id: user.id, username: user.username };
-            // Simpan sesi sebelum mengirim respons untuk memastikan cookie terkirim
             req.session.save(() => {
-                res.json({ success: true });
+                res.json({ success: true, message: "Login berhasil (Mode Tes)." });
             });
         } else {
-            return res.status(401).json({ success: false, message: "Username/password salah." });
+            return res.status(401).json({ success: false, message: "Password salah." });
         }
     } catch (err) {
         console.error("LOGIN ERROR:", err);
@@ -68,6 +72,7 @@ app.post("/api/login", async (req, res) => {
     }
 });
 
+// Endpoint untuk mengecek sesi (profil)
 app.get("/api/profile", (req, res) => {
     if (req.session && req.session.user) {
         res.json({ username: req.session.user.username });
@@ -76,6 +81,7 @@ app.get("/api/profile", (req, res) => {
     }
 });
 
+// Endpoint Logout
 app.post("/api/logout", (req, res) => {
     req.session.destroy(err => {
         if (err) return res.status(500).json({ message: "Gagal logout." });
@@ -84,6 +90,7 @@ app.post("/api/logout", (req, res) => {
     });
 });
 
+// Endpoint untuk mendapatkan semua produk
 app.get("/api/products", async (req, res) => {
     try {
         const { rows } = await pool.query('SELECT * FROM products ORDER BY id');
@@ -93,6 +100,7 @@ app.get("/api/products", async (req, res) => {
         res.status(500).json({ message: "Gagal ambil produk." });
     }
 });
+
 
 // --- Menjalankan Server ---
 const PORT = process.env.PORT || 3001;
