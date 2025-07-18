@@ -112,7 +112,8 @@ app.get("/api/products", async (req, res) => {
       nama_produk: row.nama_produk,
       harga: row.harga,
       deskripsi: row.deskripsi,
-      active: row.active, // pastikan field ini ada di database
+      gambar_url: row.gambar_url, // pastikan field ini ada di database
+      active: row.active,
     }));
     res.json(products);
   } catch (err) {
