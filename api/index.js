@@ -1,4 +1,4 @@
-// VERSI PENGUJIAN DENGAN BCRYPT
+// VERSI PENGUJIAN TANPA BCRYPT
 
 const express = require("express");
 const { Pool } = require("pg");
@@ -6,7 +6,6 @@ const cors = require("cors");
 const session = require("express-session");
 const multer = require("multer");
 const path = require("path");
-const bcrypt = require("bcryptjs");
 
 const app = express();
 
@@ -68,10 +67,10 @@ app.use("/uploads", express.static("uploads"));
 app.get("/api", (req, res) => {
   res
     .status(200)
-    .json({ message: "Backend API is running in TEST MODE (without bcrypt)!" });
+    .json({ message: "Backend API is running in TEST MODE (NO bcrypt)!" });
 });
 
-// Endpoint Login dengan bcrypt
+// Endpoint Login TANPA bcrypt
 app.post("/api/login", async (req, res) => {
   const { username, password } = req.body;
   try {
@@ -86,9 +85,8 @@ app.post("/api/login", async (req, res) => {
         .json({ success: false, message: "Username salah." });
     }
 
-    // Membandingkan password dengan bcrypt
-    const isPasswordValid = await bcrypt.compare(password, user.password);
-    if (isPasswordValid) {
+    // Password dicek langsung (plain text)
+    if (password === user.password) {
       req.session.user = { id: user.id, username: user.username };
       req.session.save(() => {
         res.json({ success: true, message: "Login berhasil." });
