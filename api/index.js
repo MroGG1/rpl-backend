@@ -16,7 +16,10 @@ app.set("trust proxy", 1);
 // 2. Konfigurasi CORS untuk frontend Vercel Anda
 app.use(
   cors({
-    origin: "https://tugas-rpl-pi.vercel.app", // ganti dengan domain frontend Anda yang aktif
+    origin: [
+      "https://tugas-rpl-pi.vercel.app",
+      "https://tugas-aks44l0ya-tians-projects-fb33f0ce.vercel.app",
+    ],
     credentials: true,
   })
 );
