@@ -115,18 +115,30 @@ app.get("/api/products", async (req, res) => {
 
 // Edit harga produk
 app.put("/api/products/:id/price", async (req, res) => {
-  const { id } = req.params;
+  const productId = parseInt(req.params.id);
   const { price } = req.body;
+
+  if (!price || isNaN(price) || price <= 0) {
+    return res
+      .status(400)
+      .json({ success: false, message: "Harga tidak valid." });
+  }
+
+  // Contoh update harga di database (ganti sesuai database Anda)
   try {
-    await pool.query("UPDATE products SET price = $1 WHERE id = $2", [
-      price,
-      id,
-    ]);
-    res.json({ success: true, message: "Harga produk berhasil diubah." });
+    // Misal pakai array products
+    const product = products.find((p) => p.id === productId);
+    if (!product) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Produk tidak ditemukan." });
+    }
+    product.harga = Number(price);
+    // Jika pakai database, lakukan query update di sini
+
+    return res.json({ success: true, message: "Harga berhasil diubah." });
   } catch (err) {
-    res
-      .status(500)
-      .json({ success: false, message: "Gagal mengubah harga produk." });
+    return res.status(500).json({ success: false, message: "Server error." });
   }
 });
 
