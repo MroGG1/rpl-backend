@@ -1,10 +1,12 @@
-// VERSI PENGUJIAN TANPA BCRYPT
+// VERSI PENGUJIAN DENGAN BCRYPT
 
 const express = require("express");
 const { Pool } = require("pg");
-// const bcrypt = require("bcryptjs"); // bcryptjs sengaja dinonaktifkan untuk tes
 const cors = require("cors");
 const session = require("express-session");
+const multer = require("multer");
+const path = require("path");
+const bcrypt = require("bcryptjs");
 
 const app = express();
 
@@ -47,6 +49,20 @@ app.use(
   })
 );
 
+// Konfigurasi Multer untuk upload gambar
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, "uploads/");
+  },
+  filename: function (req, file, cb) {
+    cb(null, Date.now() + path.extname(file.originalname));
+  },
+});
+const upload = multer({ storage: storage });
+
+// Static folder untuk akses gambar
+app.use("/uploads", express.static("uploads"));
+
 // --- KUMPULAN API ENDPOINTS ---
 
 app.get("/api", (req, res) => {
@@ -55,7 +71,7 @@ app.get("/api", (req, res) => {
     .json({ message: "Backend API is running in TEST MODE (without bcrypt)!" });
 });
 
-// Endpoint Login dengan perbandingan teks biasa
+// Endpoint Login dengan bcrypt
 app.post("/api/login", async (req, res) => {
   const { username, password } = req.body;
   try {
@@ -70,11 +86,12 @@ app.post("/api/login", async (req, res) => {
         .json({ success: false, message: "Username salah." });
     }
 
-    // === PERUBAHAN UTAMA: Membandingkan password langsung (plain text) ===
-    if (password === user.password) {
+    // Membandingkan password dengan bcrypt
+    const isPasswordValid = await bcrypt.compare(password, user.password);
+    if (isPasswordValid) {
       req.session.user = { id: user.id, username: user.username };
       req.session.save(() => {
-        res.json({ success: true, message: "Login berhasil (Mode Tes)." });
+        res.json({ success: true, message: "Login berhasil." });
       });
     } else {
       return res
@@ -105,26 +122,71 @@ app.post("/api/logout", (req, res) => {
   });
 });
 
-// Endpoint untuk mendapatkan semua produk
+// Endpoint tambah produk dengan upload gambar
+app.post("/api/products", upload.single("gambar_file"), async (req, res) => {
+  const { nama_produk, harga, deskripsi } = req.body;
+  const gambar_url = req.file ? `/uploads/${req.file.filename}` : null;
+
+  if (!nama_produk || !harga || !gambar_url) {
+    return res.status(400).json({
+      success: false,
+      message: "Nama produk, harga, dan gambar wajib diisi.",
+    });
+  }
+
+  try {
+    const result = await pool.query(
+      "INSERT INTO products (nama_produk, harga, deskripsi, gambar_url, active) VALUES ($1, $2, $3, $4, true) RETURNING *",
+      [nama_produk, harga, deskripsi || "", gambar_url]
+    );
+    res.status(201).json({
+      success: true,
+      message: "Produk berhasil ditambahkan.",
+      product: result.rows[0],
+    });
+  } catch (err) {
+    console.error("ADD PRODUCT ERROR:", err);
+    res.status(500).json({ success: false, message: "Gagal menambah produk." });
+  }
+});
+
+// Endpoint ambil semua produk
 app.get("/api/products", async (req, res) => {
   try {
     const result = await pool.query("SELECT * FROM products ORDER BY id ASC");
-    // Pastikan setiap produk punya properti 'active'
-    const products = result.rows.map((row) => ({
-      id: row.id,
-      nama_produk: row.nama_produk,
-      harga: row.harga,
-      deskripsi: row.deskripsi,
-      gambar_url: row.gambar_url, // pastikan field ini ada di database
-      active: row.active,
-    }));
-    res.json(products);
+    res.json(result.rows);
   } catch (err) {
     res.status(500).json({ error: "Gagal mengambil produk" });
   }
 });
 
-// Edit harga produk - DIPERBAIKI
+// Endpoint hapus produk
+app.delete("/api/products/:id", async (req, res) => {
+  const { id } = req.params;
+  try {
+    await pool.query("DELETE FROM products WHERE id = $1", [id]);
+    res.json({ message: "Produk berhasil dihapus" });
+  } catch (err) {
+    res.status(500).json({ error: "Gagal menghapus produk" });
+  }
+});
+
+// Endpoint edit produk (tanpa gambar)
+app.put("/api/products/:id", async (req, res) => {
+  const { id } = req.params;
+  const { nama_produk, harga, deskripsi } = req.body;
+  try {
+    await pool.query(
+      "UPDATE products SET nama_produk = $1, harga = $2, deskripsi = $3 WHERE id = $4",
+      [nama_produk, harga, deskripsi, id]
+    );
+    res.json({ message: "Produk berhasil diubah" });
+  } catch (err) {
+    res.status(500).json({ error: "Gagal mengubah produk" });
+  }
+});
+
+// Endpoint edit harga produk
 app.put("/api/products/:id/price", async (req, res) => {
   const productId = parseInt(req.params.id);
   const { price } = req.body;
@@ -144,7 +206,7 @@ app.put("/api/products/:id/price", async (req, res) => {
   }
 });
 
-// Aktif/nonaktifkan produk
+// Endpoint aktif/nonaktif produk
 app.put("/api/products/:id/active", async (req, res) => {
   const { id } = req.params;
   const { active } = req.body;
@@ -159,66 +221,8 @@ app.put("/api/products/:id/active", async (req, res) => {
   }
 });
 
-// Tambahan: Endpoint untuk menambah produk baru
-app.post("/api/products", async (req, res) => {
-  const { nama_produk, harga, deskripsi } = req.body;
-
-  if (!nama_produk || !harga) {
-    return res.status(400).json({
-      success: false,
-      message: "Nama produk dan harga wajib diisi.",
-    });
-  }
-
-  try {
-    const result = await pool.query(
-      "INSERT INTO products (nama_produk, harga, deskripsi, active) VALUES ($1, $2, $3, true) RETURNING *",
-      [nama_produk, harga, deskripsi || ""]
-    );
-
-    res.status(201).json({
-      success: true,
-      message: "Produk berhasil ditambahkan.",
-      product: result.rows[0],
-    });
-  } catch (err) {
-    console.error("ADD PRODUCT ERROR:", err);
-    res.status(500).json({ success: false, message: "Gagal menambah produk." });
-  }
-});
-
-// Tambahan: Endpoint untuk menghapus produk
-app.delete("/api/products/:id", async (req, res) => {
-  const { id } = req.params;
-
-  try {
-    const result = await pool.query(
-      "DELETE FROM products WHERE id = $1 RETURNING *",
-      [id]
-    );
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: "Produk tidak ditemukan.",
-      });
-    }
-
-    res.json({
-      success: true,
-      message: "Produk berhasil dihapus.",
-      product: result.rows[0],
-    });
-  } catch (err) {
-    console.error("DELETE PRODUCT ERROR:", err);
-    res
-      .status(500)
-      .json({ success: false, message: "Gagal menghapus produk." });
-  }
-});
-
-// --- Menjalankan Server ---
-const PORT = process.env.PORT || 3001;
+// Jalankan server
+const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Server is listening on port ${PORT}`);
+  console.log(`API berjalan di port ${PORT}`);
 });
