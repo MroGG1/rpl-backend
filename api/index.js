@@ -105,40 +105,38 @@ app.post("/api/logout", (req, res) => {
 // Endpoint untuk mendapatkan semua produk
 app.get("/api/products", async (req, res) => {
   try {
-    const { rows } = await pool.query("SELECT * FROM products ORDER BY id");
-    res.json(rows);
+    const result = await pool.query("SELECT * FROM products ORDER BY id ASC");
+    // Pastikan setiap produk punya properti 'active'
+    const products = result.rows.map((row) => ({
+      id: row.id,
+      nama_produk: row.nama_produk,
+      harga: row.harga,
+      deskripsi: row.deskripsi,
+      active: row.active, // pastikan field ini ada di database
+    }));
+    res.json(products);
   } catch (err) {
-    console.error("GET PRODUCTS ERROR:", err);
-    res.status(500).json({ message: "Gagal ambil produk." });
+    res.status(500).json({ error: "Gagal mengambil produk" });
   }
 });
 
-// Edit harga produk
+// Edit harga produk - DIPERBAIKI
 app.put("/api/products/:id/price", async (req, res) => {
   const productId = parseInt(req.params.id);
   const { price } = req.body;
 
   if (!price || isNaN(price) || price <= 0) {
-    return res
-      .status(400)
-      .json({ success: false, message: "Harga tidak valid." });
+    return res.status(400).json({ error: "Harga tidak valid" });
   }
 
-  // Contoh update harga di database (ganti sesuai database Anda)
   try {
-    // Misal pakai array products
-    const product = products.find((p) => p.id === productId);
-    if (!product) {
-      return res
-        .status(404)
-        .json({ success: false, message: "Produk tidak ditemukan." });
-    }
-    product.harga = Number(price);
-    // Jika pakai database, lakukan query update di sini
-
-    return res.json({ success: true, message: "Harga berhasil diubah." });
+    await pool.query("UPDATE products SET harga = $1 WHERE id = $2", [
+      price,
+      productId,
+    ]);
+    res.json({ message: "Harga produk berhasil diubah" });
   } catch (err) {
-    return res.status(500).json({ success: false, message: "Server error." });
+    res.status(500).json({ error: "Gagal mengubah harga produk" });
   }
 });
 
@@ -151,11 +149,67 @@ app.put("/api/products/:id/active", async (req, res) => {
       active,
       id,
     ]);
-    res.json({ success: true, message: "Status produk berhasil diubah." });
+    res.json({ message: "Status produk berhasil diubah" });
   } catch (err) {
+    res.status(500).json({ error: "Gagal mengubah status produk" });
+  }
+});
+
+// Tambahan: Endpoint untuk menambah produk baru
+app.post("/api/products", async (req, res) => {
+  const { nama_produk, harga, deskripsi } = req.body;
+
+  if (!nama_produk || !harga) {
+    return res.status(400).json({
+      success: false,
+      message: "Nama produk dan harga wajib diisi.",
+    });
+  }
+
+  try {
+    const result = await pool.query(
+      "INSERT INTO products (nama_produk, harga, deskripsi, active) VALUES ($1, $2, $3, true) RETURNING *",
+      [nama_produk, harga, deskripsi || ""]
+    );
+
+    res.status(201).json({
+      success: true,
+      message: "Produk berhasil ditambahkan.",
+      product: result.rows[0],
+    });
+  } catch (err) {
+    console.error("ADD PRODUCT ERROR:", err);
+    res.status(500).json({ success: false, message: "Gagal menambah produk." });
+  }
+});
+
+// Tambahan: Endpoint untuk menghapus produk
+app.delete("/api/products/:id", async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const result = await pool.query(
+      "DELETE FROM products WHERE id = $1 RETURNING *",
+      [id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Produk tidak ditemukan.",
+      });
+    }
+
+    res.json({
+      success: true,
+      message: "Produk berhasil dihapus.",
+      product: result.rows[0],
+    });
+  } catch (err) {
+    console.error("DELETE PRODUCT ERROR:", err);
     res
       .status(500)
-      .json({ success: false, message: "Gagal mengubah status produk." });
+      .json({ success: false, message: "Gagal menghapus produk." });
   }
 });
 
